@@ -15,36 +15,42 @@ fi
 
 logger -t custom-init "Starting first boot initialization"
 
+# Keep OpenWrt's default WAN/LAN layout. Only customize LAN management settings.
 uci -q set system.@system[0].hostname="$HOSTNAME"
 uci -q set system.@system[0].timezone="$TIMEZONE"
 uci -q set system.@system[0].zonename="$ZONENAME"
 uci -q set network.lan.ipaddr="$LAN_IP"
-
+uci -q set network.lan.netmask="255.255.255.0"
 uci commit system
 uci commit network
 
-# Ensure required files exist.
-[ -x /usr/bin/frpc ] || exit 1
-[ -f /etc/config/frpc ] || exit 1
+# FRP is the recovery/control channel and must survive factory reset.
+[ -x /usr/bin/frpc ] || {
+    logger -t custom-init "ERROR: /usr/bin/frpc missing"
+    exit 1
+}
+[ -f /etc/config/frpc ] || {
+    logger -t custom-init "ERROR: /etc/config/frpc missing"
+    exit 1
+}
+[ -s /etc/frp/token ] || {
+    logger -t custom-init "ERROR: /etc/frp/token missing"
+    exit 1
+}
 
-[ -x /usr/bin/ssserver ] || exit 1
-[ -f /etc/shadowsocks-rust/config.json ] || exit 1
-[ -x /etc/init.d/shadowsocks-rust ] || exit 1
+# Stable device identity based on the factory WAN MAC address.
+DEVICE_ID="$(tr -d ':' < /sys/class/net/eth0/address | tail -c 7)"
+logger -t custom-init "Device ID: ${DEVICE_ID}"
 
-# Enable services for every subsequent boot.
-/etc/init.d/frpc enable
-/etc/init.d/shadowsocks-rust enable
-
-# Generate stable device ID from eth0 MAC
-DEVICE_ID="$(
-    cat /sys/class/net/eth0/address |
-    tr -d ':' |
-    tail -c 7
-)"
-
+# Unique proxy name per router. remote_port=0 in the template lets frps
+# allocate an available port, avoiding collisions when many devices reset.
 uci set frpc.ssh.name="mt3600be-${DEVICE_ID}-ssh"
 uci commit frpc
 
-logger -t custom-init "First boot initialization completed"
+# Enable on every boot, and start now. If WAN/DNS is not ready yet,
+# frpc/procd will retry because login_fail_exit=false and respawn=1.
+/etc/init.d/frpc enable
+/etc/init.d/frpc restart || /etc/init.d/frpc start || true
 
+logger -t custom-init "First boot initialization completed"
 exit 0

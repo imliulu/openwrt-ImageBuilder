@@ -1,7 +1,0 @@
-{
-  "server": "::",
-  "server_port": 20327,
-  "method": "2022-blake3-aes-128-gcm",
-  "password": "46d20ct2D21oa2LlXMXZlQ==",
-  "mode": "tcp_and_udp"
-}

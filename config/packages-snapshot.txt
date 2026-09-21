@@ -3,9 +3,5 @@
 # Web UI
 luci
 
-# Remote access
+# Recovery / remote control channel
 frpc
-
-# Tools
-htop
-curl

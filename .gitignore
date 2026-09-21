@@ -3,3 +3,5 @@ dl/
 dist/*
 !dist/.gitkeep
 .DS_Store
+files/etc/frp/token
+files/etc/config/frpc
