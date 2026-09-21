@@ -10,19 +10,28 @@ CONFIG="/etc/shadowsocks-rust/config.json"
 
 start_service() {
     [ -x "$PROG" ] || {
-        logger -t shadowsocks-rust "ssserver not found"
+        logger -t shadowsocks-rust "ssserver not found: $PROG"
         return 1
     }
 
-    [ -f "$CONFIG" ] || {
-        logger -t shadowsocks-rust "config not found"
+    [ -r "$CONFIG" ] || {
+        logger -t shadowsocks-rust "config not found: $CONFIG"
         return 1
     }
 
     procd_open_instance
-    procd_set_param command "$PROG" -c "$CONFIG"
+
+    procd_set_param command \
+        "$PROG" \
+        -c "$CONFIG"
+
     procd_set_param respawn 3600 5 5
     procd_set_param stdout 1
     procd_set_param stderr 1
+
     procd_close_instance
+}
+
+service_triggers() {
+    procd_add_reload_trigger "shadowsocks-rust"
 }

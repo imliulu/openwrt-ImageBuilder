@@ -1,0 +1,11 @@
+# Extra packages on top of OpenWrt SNAPSHOT defaults
+
+# Web UI
+luci
+
+# Remote access
+frpc
+
+# Tools
+htop
+curl

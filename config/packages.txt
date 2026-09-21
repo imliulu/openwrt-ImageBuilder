@@ -8,4 +8,3 @@ curl
 owut
 tcpdump
 iperf3
-htop

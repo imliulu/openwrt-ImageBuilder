@@ -1,0 +1,20 @@
+config init
+        option stdout '1'
+        option stderr '1'
+        option user 'frpc'
+        option group 'frpc'
+        option respawn '1'
+
+config conf 'common'
+        option server_addr 'frp.example.com'
+        option server_port '7000'
+        option token 'REPLACE_FRP_TOKEN'
+        option protocol 'tcp'
+        option tls_enable 'true'
+
+config conf 'ssh'
+        option name 'mt3600be-ssh'
+        option type 'tcp'
+        option local_ip '127.0.0.1'
+        option local_port '22'
+        option remote_port '0'
