@@ -83,7 +83,7 @@ jobs:
           GITHUB_RUN_ID='${GITHUB_RUN_ID}'
           EOF_INFO
 
-      - name: Prepare FRP configuration
+            - name: Prepare FRP configuration
         shell: bash
         env:
           FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
@@ -94,14 +94,24 @@ jobs:
           test -n "$FRP_TOKEN"
           test -n "$FRP_SERVER_ADDR"
 
+          mkdir -p files/etc/config
           mkdir -p files/etc/frp
 
+          test -f config/frpc.template
+
+          sed \
+            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
+            config/frpc.template \
+            > files/etc/config/frpc
+
           printf '%s\n' "$FRP_TOKEN" > files/etc/frp/token
+
           chmod 0600 files/etc/frp/token
 
-          sed -i \
-            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
-            files/etc/config/frpc
+          if grep -q '__FRP_' files/etc/config/frpc; then
+            echo "ERROR: unresolved FRP template variable"
+            exit 1
+          fi
 
           echo "FRP configuration prepared"
           
