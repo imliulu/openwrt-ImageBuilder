@@ -2,7 +2,7 @@
 set -eu
 
 PROFILE="${PROFILE:-glinet_gl-mt3600be}"
-PACKAGE_FILE="${PACKAGE_FILE:-/custom-config/packages.txt}"
+PACKAGE_FILE="${PACKAGE_FILE:-/custom-device/packages.txt}"
 CUSTOM_FILES="${CUSTOM_FILES:-/custom-files}"
 EXTRA_IMAGE_NAME="${EXTRA_IMAGE_NAME:-custom}"
 

@@ -1,0 +1,23 @@
+#!/bin/sh
+
+case "$ACTION" in
+    ifup|ifupdate)
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+if [ -n "${DEVICE:-}" ]; then
+    SYSCTL="/proc/sys/net/ipv6/conf/${DEVICE}/disable_ipv6"
+
+    if [ -e "$SYSCTL" ]; then
+        echo 1 > "$SYSCTL"
+    fi
+fi
+
+if [ -e /proc/sys/net/ipv6/conf/lo/disable_ipv6 ]; then
+    echo 1 > /proc/sys/net/ipv6/conf/lo/disable_ipv6
+fi
+
+exit 0

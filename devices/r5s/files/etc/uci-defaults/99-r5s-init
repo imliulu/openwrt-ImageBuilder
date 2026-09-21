@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -eu
+
+CONFIG_FILE="/etc/custom-build.conf"
+
+LAN_IP="192.168.88.1"
+HOSTNAME="r5s"
+TIMEZONE="CST-8"
+ZONENAME="Asia/Shanghai"
+
+if [ -f "$CONFIG_FILE" ]; then
+    . "$CONFIG_FILE"
+fi
+
+logger -t r5s-init "Starting NanoPi R5S initialization"
+
+
+# --------------------------------------------------
+# System
+# --------------------------------------------------
+
+uci set system.@system[0].hostname="$HOSTNAME"
+uci set system.@system[0].timezone="$TIMEZONE"
+uci set system.@system[0].zonename="$ZONENAME"
+
+
+# --------------------------------------------------
+# LAN
+# --------------------------------------------------
+
+uci set network.lan.ipaddr="$LAN_IP"
+uci set network.lan.netmask="255.255.255.0"
+
+
+# --------------------------------------------------
+# Disable IPv6 at OpenWrt configuration layer
+# --------------------------------------------------
+
+# Remove WAN IPv6 interface
+uci -q delete network.wan6
+
+# Remove ULA prefix
+uci -q delete network.globals.ula_prefix
+
+# Disable LAN IPv6 services
+uci set dhcp.lan.ra='disabled'
+uci set dhcp.lan.dhcpv6='disabled'
+uci set dhcp.lan.ndp='disabled'
+
+# Remove unused IPv6 advertisement options
+uci -q delete dhcp.lan.ra_slaac
+uci -q delete dhcp.lan.ra_flags
+
+
+# --------------------------------------------------
+# Commit
+# --------------------------------------------------
+
+uci commit system
+uci commit network
+uci commit dhcp
+
+
+logger -t r5s-init \
+    "Initialization completed: hostname=${HOSTNAME}, lan=${LAN_IP}"
+
+exit 0

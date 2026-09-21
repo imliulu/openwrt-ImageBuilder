@@ -1,12 +1,17 @@
-name: Build OpenWrt SNAPSHOT GL-MT3600BE
+name: Build OpenWrt NanoPi R5S
 
 on:
   workflow_dispatch:
     inputs:
+      openwrt_version:
+        description: "OpenWrt stable version"
+        required: true
+        default: "25.12.5"
+
       firmware_version:
         description: "Custom firmware version"
         required: true
-        default: "0.0.1-snapshot"
+        default: "1.0.0"
 
       lan_ip:
         description: "LAN IP address"
@@ -16,7 +21,7 @@ on:
       hostname:
         description: "Hostname"
         required: true
-        default: "mt3600be"
+        default: "r5s"
 
 
 permissions:
@@ -24,22 +29,21 @@ permissions:
 
 
 concurrency:
-  group: openwrt-mt3600be-snapshot-${{ github.ref }}
+  group: openwrt-r5s-${{ github.ref }}
   cancel-in-progress: false
 
 
 env:
-  TARGET: mediatek
-  SUBTARGET: filogic
-  PROFILE: glinet_gl-mt3600be
-  OPENWRT_VERSION: SNAPSHOT
+  TARGET: rockchip
+  SUBTARGET: armv8
+  PROFILE: friendlyarm_nanopi-r5s
 
-  DEVICE_DIR: devices/mt3600be
+  DEVICE_DIR: devices/r5s
 
 
 jobs:
   build:
-    name: Build MT3600BE SNAPSHOT
+    name: Build R5S
     runs-on: ubuntu-latest
 
     steps:
@@ -61,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          test -n "${{ inputs.openwrt_version }}"
           test -n "${{ inputs.firmware_version }}"
           test -n "${{ inputs.lan_ip }}"
           test -n "${{ inputs.hostname }}"
@@ -68,10 +73,9 @@ jobs:
           test -d "${DEVICE_DIR}"
           test -f "${DEVICE_DIR}/build.sh"
           test -f "${DEVICE_DIR}/packages.txt"
-          test -f "${DEVICE_DIR}/frpc.template"
 
           test -f \
-            "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init"
+            "${DEVICE_DIR}/files/etc/uci-defaults/99-r5s-init"
 
           test -f \
             "${DEVICE_DIR}/files/etc/sysctl.d/99-disable-ipv6.conf"
@@ -91,7 +95,7 @@ jobs:
 
           chmod 0755 \
             "${DEVICE_DIR}/build.sh" \
-            "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init" \
+            "${DEVICE_DIR}/files/etc/uci-defaults/99-r5s-init" \
             "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
 
           cat > "${DEVICE_DIR}/files/etc/custom-build.conf" <<EOF
@@ -102,11 +106,12 @@ jobs:
           EOF
 
           cat > "${DEVICE_DIR}/files/etc/build-info" <<EOF
-          DEVICE='GL.iNet GL-MT3600BE'
+          DEVICE='NanoPi R5S'
           FIRMWARE_VERSION='${{ inputs.firmware_version }}'
-          OPENWRT_VERSION='SNAPSHOT'
+          OPENWRT_VERSION='${{ inputs.openwrt_version }}'
           TARGET='${TARGET}/${SUBTARGET}'
           PROFILE='${PROFILE}'
+          FILESYSTEM='squashfs'
           LAN_IP='${{ inputs.lan_ip }}'
           HOSTNAME='${{ inputs.hostname }}'
           BUILD_TIME='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
@@ -119,55 +124,6 @@ jobs:
           echo
           echo "=== build-info ==="
           cat "${DEVICE_DIR}/files/etc/build-info"
-
-
-      # --------------------------------------------------
-      # Prepare FRP
-      # --------------------------------------------------
-
-      - name: Prepare FRP configuration
-        shell: bash
-        env:
-          FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
-          FRP_SERVER_ADDR: ${{ vars.FRP_SERVER_ADDR }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${FRP_TOKEN:-}" ]; then
-            echo "ERROR: FRP_TOKEN is empty"
-            exit 1
-          fi
-
-          if [ -z "${FRP_SERVER_ADDR:-}" ]; then
-            echo "ERROR: FRP_SERVER_ADDR is empty"
-            exit 1
-          fi
-
-          mkdir -p \
-            "${DEVICE_DIR}/files/etc/config" \
-            "${DEVICE_DIR}/files/etc/frp"
-
-          sed \
-            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
-            "${DEVICE_DIR}/frpc.template" \
-            > "${DEVICE_DIR}/files/etc/config/frpc"
-
-          printf '%s\n' "${FRP_TOKEN}" \
-            > "${DEVICE_DIR}/files/etc/frp/token"
-
-          # ImageBuilder container must be able to read the file.
-          # 99-custom-init can chmod it to 0600 after boot.
-          chmod 0644 \
-            "${DEVICE_DIR}/files/etc/frp/token"
-
-          if grep -q '__FRP_' \
-            "${DEVICE_DIR}/files/etc/config/frpc"; then
-
-            echo "ERROR: unresolved FRP template variable"
-            exit 1
-          fi
-
-          echo "FRP configuration prepared"
 
 
       # --------------------------------------------------
@@ -187,7 +143,7 @@ jobs:
 
 
       # --------------------------------------------------
-      # Pull ImageBuilder
+      # ImageBuilder
       # --------------------------------------------------
 
       - name: Pull OpenWrt ImageBuilder
@@ -195,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
+          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${{ inputs.openwrt_version }}"
 
           echo "========================================"
           echo "OpenWrt ImageBuilder"
@@ -211,17 +167,17 @@ jobs:
       # Build
       # --------------------------------------------------
 
-      - name: Build OpenWrt MT3600BE
+      - name: Build OpenWrt R5S
         shell: bash
         run: |
           set -euo pipefail
 
-          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
+          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${{ inputs.openwrt_version }}"
 
           docker run --rm \
             -e PROFILE="${PROFILE}" \
             -e PACKAGE_FILE="/custom-device/packages.txt" \
-            -e EXTRA_IMAGE_NAME="mt3600be-${{ inputs.firmware_version }}" \
+            -e EXTRA_IMAGE_NAME="r5s-${{ inputs.firmware_version }}" \
             -v "${GITHUB_WORKSPACE}/bin:/builder/bin" \
             -v "${GITHUB_WORKSPACE}/dl:/builder/dl" \
             -v "${GITHUB_WORKSPACE}/${DEVICE_DIR}/files:/custom-files:ro" \
@@ -231,10 +187,10 @@ jobs:
 
 
       # --------------------------------------------------
-      # Collect firmware
+      # Collect SquashFS image only
       # --------------------------------------------------
 
-      - name: Collect MT3600BE firmware
+      - name: Collect R5S firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -250,7 +206,6 @@ jobs:
           fi
 
           echo "=== Generated files ==="
-
           find "${TARGET_DIR}" \
             -maxdepth 1 \
             -type f \
@@ -258,15 +213,14 @@ jobs:
             | sort
 
           echo
-          echo "=== Collect MT3600BE firmware ==="
+          echo "=== Collect SquashFS firmware ==="
 
           find "${TARGET_DIR}" \
             -maxdepth 1 \
             -type f \
             \( \
-              -name "*gl-mt3600be*.bin" \
-              -o -name "*gl-mt3600be*.itb" \
-              -o -name "*gl-mt3600be*.manifest" \
+              -name "*friendlyarm_nanopi-r5s*squashfs*.img.gz" \
+              -o -name "*friendlyarm_nanopi-r5s*.manifest" \
               -o -name "*.buildinfo" \
               -o -name "profiles.json" \
               -o -name "sha256sums" \
@@ -279,10 +233,10 @@ jobs:
 
 
       # --------------------------------------------------
-      # Verify firmware
+      # Verify SquashFS
       # --------------------------------------------------
 
-      - name: Verify MT3600BE firmware
+      - name: Verify R5S SquashFS firmware
         shell: bash
         run: |
           set -euo pipefail
@@ -291,19 +245,30 @@ jobs:
             find dist \
               -maxdepth 1 \
               -type f \
-              -name '*gl-mt3600be*sysupgrade*.bin' \
+              -name '*friendlyarm_nanopi-r5s*squashfs*sysupgrade*.img.gz' \
               | wc -l
           )"
 
           if [ "${SYSUPGRADE_COUNT}" -lt 1 ]; then
-            echo "ERROR: MT3600BE sysupgrade firmware not found"
+            echo "ERROR: R5S SquashFS sysupgrade firmware not found"
             echo
             echo "Files in dist:"
             find dist -maxdepth 1 -type f -printf '%f\n'
             exit 1
           fi
 
-          echo "MT3600BE sysupgrade firmware verified."
+          # Make sure EXT4 firmware is not included
+          if find dist \
+            -maxdepth 1 \
+            -type f \
+            -name '*ext4*.img.gz' \
+            | grep -q .; then
+
+            echo "ERROR: EXT4 firmware found in artifact directory"
+            exit 1
+          fi
+
+          echo "R5S SquashFS firmware verified."
 
 
       # --------------------------------------------------
@@ -340,7 +305,7 @@ jobs:
           set -euo pipefail
 
           echo "========================================"
-          echo "GL-MT3600BE Build Completed"
+          echo "NanoPi R5S Build Completed"
           echo "========================================"
 
           ls -lah dist/
@@ -350,10 +315,10 @@ jobs:
       # Upload
       # --------------------------------------------------
 
-      - name: Upload MT3600BE firmware
+      - name: Upload R5S firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-mt3600be-snapshot-${{ inputs.firmware_version }}
+          name: openwrt-r5s-${{ inputs.openwrt_version }}-${{ inputs.firmware_version }}
           path: dist/
           if-no-files-found: error
           retention-days: 90
