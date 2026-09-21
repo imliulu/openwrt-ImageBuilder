@@ -98,7 +98,7 @@ jobs:
             > files/etc/config/frpc
 
           printf '%s\n' "$FRP_TOKEN" > files/etc/frp/token
-          chmod 0600 files/etc/frp/token
+          chmod 0644 files/etc/frp/token
 
           if grep -q '__FRP_' files/etc/config/frpc; then
             echo "ERROR: unresolved FRP template variable" >&2

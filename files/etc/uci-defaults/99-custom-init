@@ -23,7 +23,7 @@ uci -q set network.lan.ipaddr="$LAN_IP"
 uci -q set network.lan.netmask="255.255.255.0"
 uci commit system
 uci commit network
-
+chmod 0600 /etc/frp/token
 # FRP is the recovery/control channel and must survive factory reset.
 [ -x /usr/bin/frpc ] || {
     logger -t custom-init "ERROR: /usr/bin/frpc missing"
