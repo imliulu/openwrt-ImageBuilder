@@ -1,0 +1,4 @@
+# OpenWrt 25.12.x official packages for GL-MT3600BE.
+# One package per line. Prefix a package with '-' to remove a default package.
+
+# None

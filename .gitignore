@@ -5,3 +5,4 @@ dist/*
 .DS_Store
 files/etc/frp/token
 files/etc/config/frpc
+CLAUDE.md

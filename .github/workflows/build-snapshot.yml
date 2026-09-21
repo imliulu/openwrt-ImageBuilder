@@ -61,7 +61,7 @@ jobs:
           chmod 0755 \
             files/etc/uci-defaults/99-custom-init \
             files/etc/hotplug.d/iface/99-disable-ipv6 \
-            scripts/build.sh
+            scripts/build-mt3600be.sh
 
           cat > files/etc/custom-build.conf <<'EOF_CONFIG'
           LAN_IP='${{ inputs.lan_ip }}'
@@ -136,13 +136,13 @@ jobs:
 
           docker run --rm \
             -e PROFILE="$PROFILE" \
-            -e PACKAGE_FILE="/custom-config/packages-snapshot.txt" \
+            -e PACKAGE_FILE="/custom-config/packages-mt3600be.txt" \
             -e EXTRA_IMAGE_NAME="snapshot-${{ inputs.firmware_version }}" \
             -v "$PWD/bin:/builder/bin" \
             -v "$PWD/dl:/builder/dl" \
             -v "$PWD/files:/custom-files:ro" \
             -v "$PWD/config:/custom-config:ro" \
-            -v "$PWD/scripts/build.sh:/builder/custom-build.sh:ro" \
+            -v "$PWD/scripts/build-mt3600be.sh:/builder/custom-build.sh:ro" \
             "$IMAGE" \
             sh /builder/custom-build.sh
 
