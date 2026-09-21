@@ -11,12 +11,12 @@ on:
       firmware_version:
         description: Internal firmware version
         required: true
-        default: "1.0.0"
+        default: "0.0.1"
         type: string
       lan_ip:
         description: Default LAN IPv4 address
         required: true
-        default: "192.168.8.1"
+        default: "192.168.88.1"
         type: string
       hostname:
         description: Default hostname

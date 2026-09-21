@@ -40,7 +40,7 @@ Actions -> Build OpenWrt GL-MT3600BE -> Run workflow
 |---|---|---|
 | `openwrt_version` | `25.12.5` | OpenWrt 版本 |
 | `firmware_version` | `1.0.0` | 内部固件版本 |
-| `lan_ip` | `192.168.8.1` | 首次启动后的 LAN IP |
+| `lan_ip` | `192.168.88.1` | 首次启动后的 LAN IP |
 | `hostname` | `mt3600be` | 默认主机名 |
 
 构建完成后从 Actions Artifact 下载固件。
