@@ -15,15 +15,30 @@ fi
 
 logger -t custom-init "Starting first boot initialization"
 
-# Keep OpenWrt's default WAN/LAN layout. Only customize LAN management settings.
+# System Setting
 uci -q set system.@system[0].hostname="$HOSTNAME"
 uci -q set system.@system[0].timezone="$TIMEZONE"
 uci -q set system.@system[0].zonename="$ZONENAME"
+
+# LAN Setting
 uci -q set network.lan.ipaddr="$LAN_IP"
 uci -q set network.lan.netmask="255.255.255.0"
+
+uci -q delete network.wan6
+uci -q delete network.globals.ula_prefix
+
+# Disable IPv6
+uci set dhcp.lan.ra='disabled'
+uci set dhcp.lan.dhcpv6='disabled'
+uci set dhcp.lan.ndp='disabled'
+
+# Commit UCI
 uci commit system
 uci commit network
-chmod 0600 /etc/frp/token
+uci commit dhcp
+
+# frp
+
 # FRP is the recovery/control channel and must survive factory reset.
 [ -x /usr/bin/frpc ] || {
     logger -t custom-init "ERROR: /usr/bin/frpc missing"
@@ -37,6 +52,7 @@ chmod 0600 /etc/frp/token
     logger -t custom-init "ERROR: /etc/frp/token missing"
     exit 1
 }
+chmod 0600 /etc/frp/token
 
 # Stable device identity based on the factory WAN MAC address.
 DEVICE_ID="$(tr -d ':' < /sys/class/net/eth0/address | tail -c 7)"
