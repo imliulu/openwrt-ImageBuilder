@@ -35,6 +35,16 @@ uci commit network
 /etc/init.d/frpc enable
 /etc/init.d/shadowsocks-rust enable
 
+# Generate stable device ID from eth0 MAC
+DEVICE_ID="$(
+    cat /sys/class/net/eth0/address |
+    tr -d ':' |
+    tail -c 7
+)"
+
+uci set frpc.ssh.name="mt3600be-${DEVICE_ID}-ssh"
+uci commit frpc
+
 logger -t custom-init "First boot initialization completed"
 
 exit 0

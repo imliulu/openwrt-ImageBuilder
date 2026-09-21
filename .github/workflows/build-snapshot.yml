@@ -83,6 +83,28 @@ jobs:
           GITHUB_RUN_ID='${GITHUB_RUN_ID}'
           EOF_INFO
 
+      - name: Prepare FRP configuration
+        shell: bash
+        env:
+          FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
+          FRP_SERVER_ADDR: ${{ vars.FRP_SERVER_ADDR }}
+        run: |
+          set -euo pipefail
+
+          test -n "$FRP_TOKEN"
+          test -n "$FRP_SERVER_ADDR"
+
+          mkdir -p files/etc/frp
+
+          printf '%s\n' "$FRP_TOKEN" > files/etc/frp/token
+          chmod 0600 files/etc/frp/token
+
+          sed -i \
+            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
+            files/etc/config/frpc
+
+          echo "FRP configuration prepared"
+          
       - name: Prepare directories
         shell: bash
         run: |
