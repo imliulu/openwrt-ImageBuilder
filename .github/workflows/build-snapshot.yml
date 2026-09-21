@@ -8,13 +8,11 @@ on:
         required: true
         default: "0.0.1-snapshot"
         type: string
-
       lan_ip:
         description: Default LAN IPv4 address
         required: true
         default: "192.168.88.1"
         type: string
-
       hostname:
         description: Default hostname
         required: true
@@ -48,10 +46,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           [[ "${{ inputs.firmware_version }}" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "${{ inputs.hostname }}" =~ ^[A-Za-z0-9._-]+$ ]]
-
           python3 - <<'PY'
           import ipaddress
           ipaddress.IPv4Address("${{ inputs.lan_ip }}")
@@ -62,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          chmod +x \
+          chmod 0755 \
             files/etc/uci-defaults/99-custom-init \
             scripts/build.sh
 
@@ -83,7 +79,7 @@ jobs:
           GITHUB_RUN_ID='${GITHUB_RUN_ID}'
           EOF_INFO
 
-            - name: Prepare FRP configuration
+      - name: Prepare FRP configuration
         shell: bash
         env:
           FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
@@ -94,10 +90,7 @@ jobs:
           test -n "$FRP_TOKEN"
           test -n "$FRP_SERVER_ADDR"
 
-          mkdir -p files/etc/config
-          mkdir -p files/etc/frp
-
-          test -f config/frpc.template
+          mkdir -p files/etc/config files/etc/frp
 
           sed \
             "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
@@ -105,24 +98,23 @@ jobs:
             > files/etc/config/frpc
 
           printf '%s\n' "$FRP_TOKEN" > files/etc/frp/token
-
           chmod 0600 files/etc/frp/token
 
           if grep -q '__FRP_' files/etc/config/frpc; then
-            echo "ERROR: unresolved FRP template variable"
+            echo "ERROR: unresolved FRP template variable" >&2
             exit 1
           fi
 
-          echo "FRP configuration prepared"
-          
+          grep -q "option remote_port '0'" files/etc/config/frpc || {
+            echo "ERROR: FRP SSH proxy must use remote_port=0 for batch-safe recovery" >&2
+            exit 1
+          }
+
       - name: Prepare directories
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p bin dl dist
-
-          # ImageBuilder container runs as a non-root user.
           chmod 0777 bin dl
 
       - name: Build firmware
@@ -159,9 +151,7 @@ jobs:
           set -euo pipefail
 
           rm -rf dist/*
-
           TARGET_DIR="bin/targets/${TARGET}/${SUBTARGET}"
-
           test -d "$TARGET_DIR"
 
           find "$TARGET_DIR" -maxdepth 1 -type f \
@@ -176,12 +166,7 @@ jobs:
 
           (
             cd dist
-
-            find . \
-              -maxdepth 1 \
-              -type f \
-              ! -name SHA256SUMS \
-              -print0 \
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
               | sort -z \
               | xargs -0 sha256sum > SHA256SUMS
           )
@@ -191,9 +176,7 @@ jobs:
           ls -lah dist
 
           SYSUPGRADE_COUNT="$(
-            find dist \
-              -maxdepth 1 \
-              -type f \
+            find dist -maxdepth 1 -type f \
               -name '*gl-mt3600be*sysupgrade*.bin' \
               | wc -l
           )"
@@ -209,4 +192,4 @@ jobs:
           name: openwrt-gl-mt3600be-SNAPSHOT-${{ inputs.firmware_version }}
           path: dist/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
