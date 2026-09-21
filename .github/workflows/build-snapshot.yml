@@ -60,6 +60,7 @@ jobs:
 
           chmod 0755 \
             files/etc/uci-defaults/99-custom-init \
+            files/etc/hotplug.d/iface/99-disable-ipv6 \
             scripts/build.sh
 
           cat > files/etc/custom-build.conf <<'EOF_CONFIG'

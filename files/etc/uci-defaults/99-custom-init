@@ -28,9 +28,20 @@ uci -q delete network.wan6
 uci -q delete network.globals.ula_prefix
 
 # Disable IPv6
+# Remove WAN IPv6 interface
+uci -q delete network.wan6
+
+# Remove ULA prefix
+uci -q delete network.globals.ula_prefix
+
+# Disable LAN IPv6 advertisement/services
 uci set dhcp.lan.ra='disabled'
 uci set dhcp.lan.dhcpv6='disabled'
 uci set dhcp.lan.ndp='disabled'
+
+# Remove unused IPv6 options
+uci -q delete dhcp.lan.ra_slaac
+uci -q delete dhcp.lan.ra_flags
 
 # Commit UCI
 uci commit system
