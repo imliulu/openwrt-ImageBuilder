@@ -1,0 +1,21 @@
+# OpenWrt 25.12.x official packages for GL-MT3600BE.
+# One package per line. Prefix a package with '-' to remove a default package.
+
+# Web UI
+luci
+luci-ssl
+luci-i18n-base-zh-cn
+luci-i18n-firewall-zh-cn
+
+# Upgrade / diagnostics
+owut
+curl
+ca-bundle
+ca-certificates
+tcpdump
+iperf3
+htop
+
+# VPN
+wireguard-tools
+luci-proto-wireguard

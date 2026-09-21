@@ -1,0 +1,150 @@
+name: Build OpenWrt GL-MT3600BE
+
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt_version:
+        description: OpenWrt stable version
+        required: true
+        default: "25.12.5"
+        type: string
+      firmware_version:
+        description: Internal firmware version
+        required: true
+        default: "1.0.0"
+        type: string
+      lan_ip:
+        description: Default LAN IPv4 address
+        required: true
+        default: "192.168.8.1"
+        type: string
+      hostname:
+        description: Default hostname
+        required: true
+        default: "mt3600be"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openwrt-mt3600be-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TARGET: mediatek
+  SUBTARGET: filogic
+  PROFILE: glinet_gl-mt3600be
+
+jobs:
+  build:
+    name: OpenWrt ${{ inputs.openwrt_version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.openwrt_version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${{ inputs.firmware_version }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "${{ inputs.hostname }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          python3 - <<'PY'
+          import ipaddress
+          ipaddress.IPv4Address("${{ inputs.lan_ip }}")
+          PY
+
+      - name: Prepare custom rootfs files
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x files/etc/uci-defaults/99-custom-init scripts/build.sh
+
+          cat > files/etc/custom-build.conf <<'EOF_CONFIG'
+          LAN_IP='${{ inputs.lan_ip }}'
+          HOSTNAME='${{ inputs.hostname }}'
+          TIMEZONE='CST-8'
+          ZONENAME='Asia/Shanghai'
+          EOF_CONFIG
+
+          cat > files/etc/build-info <<EOF_INFO
+          FIRMWARE_VERSION='${{ inputs.firmware_version }}'
+          OPENWRT_VERSION='${{ inputs.openwrt_version }}'
+          TARGET='${TARGET}/${SUBTARGET}'
+          PROFILE='${PROFILE}'
+          BUILD_TIME='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+          GIT_COMMIT='${GITHUB_SHA}'
+          EOF_INFO
+
+      - name: Prepare directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bin dl dist
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM="${TARGET}-${SUBTARGET}"
+          IMAGE="openwrt/imagebuilder:${PLATFORM}-${{ inputs.openwrt_version }}"
+
+          docker pull "$IMAGE"
+
+          docker run --rm \
+            -e PROFILE="$PROFILE" \
+            -e EXTRA_IMAGE_NAME="custom-${{ inputs.firmware_version }}" \
+            -v "$PWD/bin:/builder/bin" \
+            -v "$PWD/dl:/builder/dl" \
+            -v "$PWD/files:/custom-files:ro" \
+            -v "$PWD/config:/custom-config:ro" \
+            -v "$PWD/scripts/build.sh:/builder/custom-build.sh:ro" \
+            "$IMAGE" \
+            sh /builder/custom-build.sh
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist/*
+
+          TARGET_DIR="bin/targets/${TARGET}/${SUBTARGET}"
+          test -d "$TARGET_DIR"
+
+          find "$TARGET_DIR" -maxdepth 1 -type f \
+            \( -name "*gl-mt3600be*.bin" \
+               -o -name "*gl-mt3600be*.itb" \
+               -o -name "*gl-mt3600be*.manifest" \
+               -o -name "profiles.json" \
+               -o -name "sha256sums" \) \
+            -exec cp -v {} dist/ \;
+
+          cp files/etc/build-info dist/build-info.txt
+
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS
+          )
+
+          echo "=== dist ==="
+          ls -lah dist
+
+          SYSUPGRADE_COUNT="$(find dist -maxdepth 1 -type f -name '*gl-mt3600be*sysupgrade.bin' | wc -l)"
+          if [ "$SYSUPGRADE_COUNT" -lt 1 ]; then
+            echo "ERROR: sysupgrade image was not generated" >&2
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-gl-mt3600be-${{ inputs.openwrt_version }}-${{ inputs.firmware_version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
