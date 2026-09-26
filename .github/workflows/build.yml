@@ -1,885 +1,283 @@
-# Workflow 显示名称。
 name: Build OpenWrt 25.12.5 GL-MT3600BE
 
-
-# ============================================================
-# Workflow 触发方式
-# ============================================================
-#
-# workflow_dispatch 表示：
-# 不会因为 push / pull_request 自动触发，
-# 只能在 GitHub Actions 页面手动执行。
-#
-# GitHub 页面：
-# Actions
-#   -> Build OpenWrt 25.12.5 GL-MT3600BE
-#   -> Run workflow
-#
 on:
   workflow_dispatch:
-
-    # --------------------------------------------------------
-    # 手动构建时允许输入一些自定义参数。
-    # 这样无需修改代码，就可以生成不同配置的固件。
-    # --------------------------------------------------------
     inputs:
-
-      # 自定义固件版本号。
-      #
-      # 这是我们自己的固件版本，
-      # 与 OpenWrt 官方版本 25.12.5 不同。
-      #
-      # 例如：
-      #
-      #   OpenWrt 官方版本：
-      #     25.12.5
-      #
-      #   自定义固件版本：
-      #     0.0.1
-      #
-      # 最终文件名可能类似：
-      #
-      #   openwrt-...-25.12.5-0.0.1-sysupgrade.bin
-      #
       firmware_version:
-        description: Internal firmware version
+        description: "Custom firmware version"
         required: true
         default: "0.0.1"
-        type: string
 
-      # OpenWrt LAN 默认 IPv4 地址。
-      #
-      # 固件首次启动或者恢复出厂设置之后，
-      # LAN 管理地址会被初始化成这里配置的 IP。
-      #
-      # 默认：
-      #
-      #   http://192.168.88.1
-      #
       lan_ip:
-        description: Default LAN IPv4 address
+        description: "LAN IP address"
         required: true
         default: "192.168.88.1"
-        type: string
 
-      # OpenWrt 默认主机名。
-      #
-      # 安装固件后：
-      #
-      #   hostname
-      #
-      # 默认会显示：
-      #
-      #   mt3600be
-      #
       hostname:
-        description: Default hostname
+        description: "Hostname"
         required: true
         default: "mt3600be"
-        type: string
 
 
-# ============================================================
-# GitHub Token 权限
-# ============================================================
-#
-# 当前 Workflow 只需要：
-#
-#   读取仓库代码
-#
-# 不需要：
-#
-#   push
-#   创建 release
-#   修改 issue
-#   修改 package
-#
-# 所以遵循最小权限原则，只开放 contents: read。
-#
 permissions:
   contents: read
 
-
-# ============================================================
-# 并发控制
-# ============================================================
-#
-# 防止同一个分支同时运行多个稳定版构建任务。
-#
-# group：
-#   定义并发组名称。
-#
-# github.ref：
-#   当前 Git 分支或 Tag。
-#
-# 例如 main 分支：
-#
-#   openwrt-mt3600be-25.12.5-refs/heads/main
-#
-# cancel-in-progress: false：
-#
-#   如果已经有一个构建正在运行，
-#   新提交的构建不会取消旧任务。
-#
-# 对固件构建来说通常更安全，
-# 因为一个构建任务可能已经运行较长时间。
-#
 concurrency:
   group: openwrt-mt3600be-25.12.5-${{ github.ref }}
   cancel-in-progress: false
 
 
-# ============================================================
-# 全局环境变量
-# ============================================================
-#
-# 这些变量整个 Job 都可以直接使用。
-#
 env:
-
-  # OpenWrt Target。
-  #
-  # GL-MT3600BE 使用 MediaTek Filogic 平台：
-  #
-  #   target = mediatek
-  #
   TARGET: mediatek
-
-  # OpenWrt Subtarget。
-  #
-  # MediaTek Filogic 系列设备对应：
-  #
-  #   subtarget = filogic
-  #
-  # 最终 OpenWrt Target 路径为：
-  #
-  #   mediatek/filogic
-  #
   SUBTARGET: filogic
-
-  # OpenWrt ImageBuilder Profile。
-  #
-  # Profile 决定：
-  #
-  #   具体给哪一款路由器生成固件
-  #
-  # GL.iNet GL-MT3600BE 对应：
-  #
-  #   glinet_gl-mt3600be
-  #
   PROFILE: glinet_gl-mt3600be
-
-  # 固定 OpenWrt 官方稳定版本。
-  #
-  # SNAPSHOT 构建中通常这里为：
-  #
-  #   SNAPSHOT
-  #
-  # 当前 Workflow 固定为：
-  #
-  #   25.12.5
-  #
-  # 因此以后即使 OpenWrt 发布 25.12.6，
-  # 此 Workflow 仍然继续构建 25.12.5。
-  #
   OPENWRT_VERSION: "25.12.5"
 
+  DEVICE_DIR: devices/mt3600be
 
-# ============================================================
-# Jobs
-# ============================================================
+
 jobs:
-
   build:
+    name: Build MT3600BE 25.12.5
+    runs-on: ubuntu-latest
 
-    # GitHub Actions 页面显示的 Job 名称。
-    name: OpenWrt 25.12.5
-
-    # 使用 GitHub 官方 Ubuntu 24.04 Runner。
-    #
-    # Runner 中已经预装：
-    #
-    #   Git
-    #   Docker
-    #   Python
-    #   常见 Linux 工具
-    #
-    runs-on: ubuntu-24.04
-
-    # 最长运行时间。
-    #
-    # 如果构建超过 45 分钟，
-    # GitHub Actions 会自动终止任务。
-    #
-    # 防止因为网络问题、Docker 卡死等原因，
-    # 无限占用 Runner。
-    #
-    timeout-minutes: 45
-
-
-    # ========================================================
-    # 构建步骤
-    # ========================================================
     steps:
 
-
-      # ------------------------------------------------------
-      # Step 1
-      # 拉取当前 GitHub 仓库代码
-      # ------------------------------------------------------
-      #
-      # checkout@v4 会把仓库内容拉到：
-      #
-      #   $GITHUB_WORKSPACE
-      #
-      # 后面的：
-      #
-      #   files/
-      #   scripts/
-      #   config/
-      #
-      # 都来自这里。
-      #
-      - name: Checkout
+      # --------------------------------------------------
+      # Checkout
+      # --------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # ------------------------------------------------------
-      # Step 2
-      # 校验用户输入
-      # ------------------------------------------------------
-      #
-      # 目的：
-      #
-      #   避免非法参数进入 shell
-      #   避免错误 IP 被写入固件
-      #   避免版本号造成路径异常
-      #
+      # --------------------------------------------------
+      # Validate
+      # --------------------------------------------------
+
       - name: Validate inputs
         shell: bash
         run: |
-          # -e
-          #   任意命令失败立即退出。
-          #
-          # -u
-          #   使用未定义变量时直接报错。
-          #
-          # -o pipefail
-          #   管道中任意命令失败，都认为整条命令失败。
-          #
-          # 对 CI 脚本建议默认使用。
-          #
           set -euo pipefail
 
+          test -n "${{ inputs.firmware_version }}"
+          test -n "${{ inputs.lan_ip }}"
+          test -n "${{ inputs.hostname }}"
+          test -d "${DEVICE_DIR}"
+          test -f "${DEVICE_DIR}/build.sh"
+          test -f "${DEVICE_DIR}/packages.txt"
+          test -f "${DEVICE_DIR}/frpc.template"
 
-          # --------------------------------------------------
-          # 校验 firmware_version
-          # --------------------------------------------------
-          #
-          # 只允许：
-          #
-          #   A-Z
-          #   a-z
-          #   0-9
-          #   .
-          #   _
-          #   -
-          #
-          # 合法：
-          #
-          #   0.0.1
-          #   1.0.0-beta
-          #   test_01
-          #
-          # 不允许空格和 shell 特殊字符。
-          #
-          [[ "${{ inputs.firmware_version }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          test -f \
+            "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init"
 
+          test -f \
+            "${DEVICE_DIR}/files/etc/sysctl.d/99-disable-ipv6.conf"
 
-          # --------------------------------------------------
-          # 校验 hostname
-          # --------------------------------------------------
-          #
-          # 同样只允许常见安全字符。
-          #
-          [[ "${{ inputs.hostname }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          test -f \
+            "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
 
+      # --------------------------------------------------
+      # Prepare custom rootfs
+      # --------------------------------------------------
 
-          # --------------------------------------------------
-          # 校验 LAN IPv4 地址
-          # --------------------------------------------------
-          #
-          # 使用 Python 标准库 ipaddress，
-          # 确认输入确实是合法 IPv4 地址。
-          #
-          # 例如：
-          #
-          #   192.168.88.1   -> 正常
-          #   192.168.999.1  -> 构建失败
-          #
-          python3 - <<'PY'
-          import ipaddress
-
-          ipaddress.IPv4Address("${{ inputs.lan_ip }}")
-          PY
-
-
-      # ------------------------------------------------------
-      # Step 3
-      # 准备需要写入 OpenWrt rootfs 的文件
-      # ------------------------------------------------------
-      #
-      # ImageBuilder 支持：
-      #
-      #   FILES=<directory>
-      #
-      # 将一个目录覆盖到最终 rootfs。
-      #
-      # 本项目使用：
-      #
-      #   files/
-      #
-      # 例如：
-      #
-      #   files/etc/custom-build.conf
-      #
-      # 最终会出现在路由器：
-      #
-      #   /etc/custom-build.conf
-      #
-      - name: Prepare custom rootfs files
+      - name: Prepare custom rootfs
         shell: bash
         run: |
           set -euo pipefail
 
+          chmod 0755 \
+            "${DEVICE_DIR}/build.sh" \
+            "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init" \
+            "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
 
-          # --------------------------------------------------
-          # 给脚本添加执行权限
-          # --------------------------------------------------
-          #
-          # Git 在某些情况下可能没有正确保留 executable bit。
-          #
-          # 这里主动确保：
-          #
-          #   uci-defaults 初始化脚本
-          #   ImageBuilder 构建脚本
-          #
-          # 都可以执行。
-          #
-          chmod +x \
-            files/etc/uci-defaults/99-custom-init \
-            scripts/build.sh
-
-
-          # --------------------------------------------------
-          # 生成固件运行配置
-          # --------------------------------------------------
-          #
-          # 这个文件最终会被写入：
-          #
-          #   /etc/custom-build.conf
-          #
-          # 可以由：
-          #
-          #   /etc/uci-defaults/99-custom-init
-          #
-          # 在首次启动时读取。
-          #
-          cat > files/etc/custom-build.conf <<'EOF_CONFIG'
-
-          # OpenWrt 默认 LAN 地址。
+          cat > "${DEVICE_DIR}/files/etc/custom-build.conf" <<EOF
           LAN_IP='${{ inputs.lan_ip }}'
-
-          # OpenWrt 主机名。
           HOSTNAME='${{ inputs.hostname }}'
-
-          # POSIX 时区。
-          #
-          # CST-8 代表 UTC+8。
-          #
           TIMEZONE='CST-8'
-
-          # IANA 时区名称。
-          #
-          # LuCI 等组件会使用这个名称。
-          #
           ZONENAME='Asia/Shanghai'
+          EOF
 
-          EOF_CONFIG
-
-
-          # --------------------------------------------------
-          # 生成固件 Build 信息
-          # --------------------------------------------------
-          #
-          # 最终会写入固件：
-          #
-          #   /etc/build-info
-          #
-          # 用于以后确认：
-          #
-          #   这个固件是谁构建的
-          #   基于哪个 OpenWrt 版本
-          #   Git commit 是什么
-          #   哪次 GitHub Actions 构建生成
-          #
-          cat > files/etc/build-info <<EOF_INFO
-
-          # 自定义固件版本。
+          cat > "${DEVICE_DIR}/files/etc/build-info" <<EOF
+          DEVICE='GL.iNet GL-MT3600BE'
           FIRMWARE_VERSION='${{ inputs.firmware_version }}'
-
-          # OpenWrt 官方版本。
           OPENWRT_VERSION='${OPENWRT_VERSION}'
-
-          # OpenWrt Target/Subtarget。
           TARGET='${TARGET}/${SUBTARGET}'
-
-          # ImageBuilder Profile。
           PROFILE='${PROFILE}'
-
-          # 构建时间。
-          #
-          # 使用 UTC，
-          # 避免 CI Runner 时区不一致。
-          #
+          LAN_IP='${{ inputs.lan_ip }}'
+          HOSTNAME='${{ inputs.hostname }}'
           BUILD_TIME='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
-
-          # 当前 Git commit SHA。
-          #
-          # 可以用来精确追溯源码版本。
-          #
           GIT_COMMIT='${GITHUB_SHA}'
+          EOF
 
-          # GitHub Actions Run ID。
-          #
-          # 可以通过该 ID 找到对应构建任务。
-          #
-          GITHUB_RUN_ID='${GITHUB_RUN_ID}'
+          echo "=== custom-build.conf ==="
+          cat "${DEVICE_DIR}/files/etc/custom-build.conf"
 
-          EOF_INFO
+          echo
+          echo "=== build-info ==="
+          cat "${DEVICE_DIR}/files/etc/build-info"
 
 
-      # ------------------------------------------------------
-      # Step 4
-      # 准备 ImageBuilder 使用的目录
-      # ------------------------------------------------------
-      - name: Prepare directories
+      # --------------------------------------------------
+      # Prepare FRP
+      # --------------------------------------------------
+
+      - name: Prepare FRP configuration
+        shell: bash
+        env:
+          FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
+          FRP_SERVER_ADDR: ${{ vars.FRP_SERVER_ADDR }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FRP_TOKEN:-}" ]; then
+            echo "ERROR: FRP_TOKEN is empty"
+            exit 1
+          fi
+
+          if [ -z "${FRP_SERVER_ADDR:-}" ]; then
+            echo "ERROR: FRP_SERVER_ADDR is empty"
+            exit 1
+          fi
+
+          mkdir -p \
+            "${DEVICE_DIR}/files/etc/config" \
+            "${DEVICE_DIR}/files/etc/frp"
+
+          sed \
+            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
+            "${DEVICE_DIR}/frpc.template" \
+            > "${DEVICE_DIR}/files/etc/config/frpc"
+
+          printf '%s\n' "${FRP_TOKEN}" \
+            > "${DEVICE_DIR}/files/etc/frp/token"
+
+          # ImageBuilder container must be able to read the file.
+          # 99-custom-init can chmod it to 0600 after boot.
+          chmod 0644 \
+            "${DEVICE_DIR}/files/etc/frp/token"
+
+          if grep -q '__FRP_' \
+            "${DEVICE_DIR}/files/etc/config/frpc"; then
+
+            echo "ERROR: unresolved FRP template variable"
+            exit 1
+          fi
+
+          echo "FRP configuration prepared"
+
+      # --------------------------------------------------
+      # Prepare directories
+      # --------------------------------------------------
+
+      - name: Prepare build directories
         shell: bash
         run: |
           set -euo pipefail
 
+          mkdir -p bin
+          mkdir -p dl
+          mkdir -p dist
 
-          # bin
-          #
-          # ImageBuilder 最终输出目录。
-          #
-          # 通常生成：
-          #
-          #   bin/targets/mediatek/filogic/
-          #
-          #
-          # dl
-          #
-          # 下载缓存目录。
-          #
-          # ImageBuilder 下载 ipk / apk 等资源时会使用。
-          #
-          # 使用宿主机目录可以让容器写入。
-          #
-          #
-          # dist
-          #
-          # 最终整理后的 GitHub Artifact 目录。
-          #
-          mkdir -p bin dl dist
-
-
-          # --------------------------------------------------
-          # 放宽 bin / dl 权限
-          # --------------------------------------------------
-          #
-          # OpenWrt ImageBuilder Docker 镜像通常不是 root 用户运行。
-          #
-          # 如果宿主机目录权限不足，
-          # 容器可能出现：
-          #
-          #   Permission denied
-          #
-          # CI Runner 是临时环境，
-          # 所以这里直接使用 0777 简化权限处理。
-          #
           chmod 0777 bin dl
 
 
-      # ------------------------------------------------------
-      # Step 5
-      # 执行 OpenWrt ImageBuilder
-      # ------------------------------------------------------
-      - name: Build firmware
+      # --------------------------------------------------
+      # Pull ImageBuilder
+      # --------------------------------------------------
+      - name: Pull OpenWrt ImageBuilder
         shell: bash
         run: |
           set -euo pipefail
 
+          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
 
-          # --------------------------------------------------
-          # Docker Image 平台名称
-          # --------------------------------------------------
-          #
-          # TARGET：
-          #
-          #   mediatek
-          #
-          # SUBTARGET：
-          #
-          #   filogic
-          #
-          # 拼接以后：
-          #
-          #   mediatek-filogic
-          #
-          PLATFORM="${TARGET}-${SUBTARGET}"
-
-
-          # --------------------------------------------------
-          # OpenWrt 官方 ImageBuilder Docker 镜像
-          # --------------------------------------------------
-          #
-          # 最终格式：
-          #
-          #   openwrt/imagebuilder:
-          #     mediatek-filogic-25.12.5
-          #
-          IMAGE="openwrt/imagebuilder:${PLATFORM}-${OPENWRT_VERSION}"
-
-
-          # 打印构建信息。
-          #
-          # 方便以后查看 Actions 日志时快速确认：
-          #
-          #   实际用了哪个镜像
-          #   构建哪个设备
-          #   OpenWrt 是哪个版本
-          #
           echo "========================================"
           echo "OpenWrt ImageBuilder"
-          echo "Image:   ${IMAGE}"
-          echo "Profile: ${PROFILE}"
-          echo "Version: ${OPENWRT_VERSION}"
+          echo "IMAGE:   ${IMAGE}"
+          echo "TARGET:  ${TARGET}/${SUBTARGET}"
+          echo "PROFILE: ${PROFILE}"
           echo "========================================"
 
+          docker pull "${IMAGE}"
 
-          # --------------------------------------------------
-          # 下载 ImageBuilder Docker 镜像
-          # --------------------------------------------------
-          #
-          # 显式 docker pull 的好处是：
-          #
-          #   构建日志更加清晰
-          #   镜像下载失败时更容易定位问题
-          #
-          docker pull "$IMAGE"
+      # --------------------------------------------------
+      # Build
+      # --------------------------------------------------
 
-
-          # --------------------------------------------------
-          # 启动 ImageBuilder Docker 容器
-          # --------------------------------------------------
-          docker run --rm \
-
-            # ------------------------------------------------
-            # PROFILE
-            # ------------------------------------------------
-            #
-            # 指定设备 Profile：
-            #
-            #   glinet_gl-mt3600be
-            #
-            # scripts/build.sh 会读取这个环境变量。
-            #
-            -e PROFILE="$PROFILE" \
-
-            # ------------------------------------------------
-            # PACKAGE_FILE
-            # ------------------------------------------------
-            #
-            # 指定额外软件包列表。
-            #
-            # 容器中的：
-            #
-            #   /custom-config
-            #
-            # 实际映射到仓库：
-            #
-            #   ./config
-            #
-            # 因此：
-            #
-            #   /custom-config/packages-snapshot.txt
-            #
-            # 实际就是：
-            #
-            #   config/packages-snapshot.txt
-            #
-            # 虽然文件名字包含 snapshot，
-            # 这里只是作为统一的软件包配置文件使用，
-            # 与 OpenWrt 官方版本没有强绑定关系。
-            #
-            -e PACKAGE_FILE="/custom-config/packages-snapshot.txt" \
-
-            # ------------------------------------------------
-            # EXTRA_IMAGE_NAME
-            # ------------------------------------------------
-            #
-            # 添加到固件文件名中的自定义版本。
-            #
-            # 例如：
-            #
-            #   OPENWRT_VERSION = 25.12.5
-            #   firmware_version = 0.0.1
-            #
-            # 得到：
-            #
-            #   25.12.5-0.0.1
-            #
-            -e EXTRA_IMAGE_NAME="${OPENWRT_VERSION}-${{ inputs.firmware_version }}" \
-
-
-            # ------------------------------------------------
-            # bin 目录映射
-            # ------------------------------------------------
-            #
-            # 宿主机：
-            #
-            #   ./bin
-            #
-            # 容器：
-            #
-            #   /builder/bin
-            #
-            # ImageBuilder 产生的固件最终会保留在宿主机。
-            #
-            -v "$PWD/bin:/builder/bin" \
-
-
-            # ------------------------------------------------
-            # dl 下载缓存
-            # ------------------------------------------------
-            #
-            # 宿主机：
-            #
-            #   ./dl
-            #
-            # 容器：
-            #
-            #   /builder/dl
-            #
-            -v "$PWD/dl:/builder/dl" \
-
-
-            # ------------------------------------------------
-            # 自定义 rootfs 文件
-            # ------------------------------------------------
-            #
-            # 宿主机：
-            #
-            #   ./files
-            #
-            # 容器：
-            #
-            #   /custom-files
-            #
-            # ro：
-            #
-            #   read-only
-            #
-            # 防止 ImageBuilder 意外修改源码目录。
-            #
-            -v "$PWD/files:/custom-files:ro" \
-
-
-            # ------------------------------------------------
-            # 自定义配置目录
-            # ------------------------------------------------
-            #
-            # 包含：
-            #
-            #   packages-snapshot.txt
-            #
-            # 等构建配置。
-            #
-            -v "$PWD/config:/custom-config:ro" \
-
-
-            # ------------------------------------------------
-            # 自定义构建脚本
-            # ------------------------------------------------
-            #
-            # 宿主机：
-            #
-            #   ./scripts/build.sh
-            #
-            # 容器：
-            #
-            #   /builder/custom-build.sh
-            #
-            -v "$PWD/scripts/build.sh:/builder/custom-build.sh:ro" \
-
-
-            # 指定 Docker Image。
-            "$IMAGE" \
-
-
-            # 容器启动后执行：
-            #
-            #   sh /builder/custom-build.sh
-            #
-            # build.sh 内部再执行 OpenWrt ImageBuilder。
-            #
-            sh /builder/custom-build.sh
-
-
-      # ------------------------------------------------------
-      # Step 6
-      # 整理生成的固件
-      # ------------------------------------------------------
-      #
-      # ImageBuilder 会生成大量文件。
-      #
-      # GitHub Artifact 中通常只需要：
-      #
-      #   sysupgrade.bin
-      #   factory.bin / itb
-      #   manifest
-      #   profiles.json
-      #   sha256sums
-      #   build-info
-      #
-      - name: Collect artifacts
+      - name: Build OpenWrt MT3600BE
         shell: bash
         run: |
           set -euo pipefail
 
+          IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
 
-          # 清空上一阶段的 Artifact 目录。
-          #
-          # GitHub Runner 通常是新的，
-          # 但主动清理更加稳妥。
-          #
+          docker run --rm \
+            -e PROFILE="${PROFILE}" \
+            -e PACKAGE_FILE="/custom-device/packages.txt" \
+            -e EXTRA_IMAGE_NAME="mt3600be-${{ inputs.firmware_version }}" \
+            -v "${GITHUB_WORKSPACE}/bin:/builder/bin" \
+            -v "${GITHUB_WORKSPACE}/dl:/builder/dl" \
+            -v "${GITHUB_WORKSPACE}/${DEVICE_DIR}/files:/custom-files:ro" \
+            -v "${GITHUB_WORKSPACE}/${DEVICE_DIR}:/custom-device:ro" \
+            "${IMAGE}" \
+            sh /custom-device/build.sh
+
+      # --------------------------------------------------
+      # Collect firmware
+      # --------------------------------------------------
+
+      - name: Collect MT3600BE firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+
           rm -rf dist/*
 
-
-          # --------------------------------------------------
-          # ImageBuilder 输出目录
-          # --------------------------------------------------
-          #
-          # 当前设备：
-          #
-          #   mediatek/filogic
-          #
-          # 最终为：
-          #
-          #   bin/targets/mediatek/filogic
-          #
           TARGET_DIR="bin/targets/${TARGET}/${SUBTARGET}"
 
+          if [ ! -d "${TARGET_DIR}" ]; then
+            echo "ERROR: target directory not found:"
+            echo "${TARGET_DIR}"
+            exit 1
+          fi
 
-          # 如果目录不存在，
-          # 说明 ImageBuilder 构建失败或输出路径异常。
-          #
-          test -d "$TARGET_DIR"
+          echo "=== Generated files ==="
 
+          find "${TARGET_DIR}" \
+            -maxdepth 1 \
+            -type f \
+            -printf '%f\n' \
+            | sort
 
-          # --------------------------------------------------
-          # 复制需要保存的构建产物
-          # --------------------------------------------------
-          #
-          # -maxdepth 1：
-          #   只扫描当前目录。
-          #
-          # -type f：
-          #   只匹配普通文件。
-          #
-          # 当前保存：
-          #
-          #   GL-MT3600BE 固件
-          #   manifest
-          #   profiles.json
-          #   sha256sums
-          #
-          find "$TARGET_DIR" -maxdepth 1 -type f \
-            \( -name "*gl-mt3600be*.bin" \
-               -o -name "*gl-mt3600be*.itb" \
-               -o -name "*gl-mt3600be*.manifest" \
-               -o -name "profiles.json" \
-               -o -name "sha256sums" \) \
+          echo
+          echo "=== Collect MT3600BE firmware ==="
+
+          find "${TARGET_DIR}" \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name "*gl-mt3600be*.bin" \
+              -o -name "*gl-mt3600be*.itb" \
+              -o -name "*gl-mt3600be*.manifest" \
+              -o -name "*.buildinfo" \
+              -o -name "profiles.json" \
+              -o -name "sha256sums" \
+            \) \
             -exec cp -v {} dist/ \;
 
+          cp \
+            "${DEVICE_DIR}/files/etc/build-info" \
+            dist/build-info.txt
 
-          # --------------------------------------------------
-          # 保存 build-info
-          # --------------------------------------------------
-          #
-          # 这个文件里面包含：
-          #
-          #   固件版本
-          #   OpenWrt 版本
-          #   Git Commit
-          #   GitHub Run ID
-          #   构建时间
-          #
-          cp files/etc/build-info dist/build-info.txt
+      # --------------------------------------------------
+      # Verify firmware
+      # --------------------------------------------------
 
+      - name: Verify MT3600BE firmware
+        shell: bash
+        run: |
+          set -euo pipefail
 
-          # --------------------------------------------------
-          # 重新生成最终 Artifact 的 SHA256
-          # --------------------------------------------------
-          #
-          # OpenWrt 自己会产生 sha256sums，
-          # 但我们又额外加入了：
-          #
-          #   build-info.txt
-          #
-          # 因此再生成一个我们自己的：
-          #
-          #   SHA256SUMS
-          #
-          # 它覆盖 dist 中所有最终文件。
-          #
-          (
-            cd dist
-
-            find . \
-              -maxdepth 1 \
-              -type f \
-              ! -name SHA256SUMS \
-              -print0 \
-              | sort -z \
-              | xargs -0 sha256sum > SHA256SUMS
-          )
-
-
-          # --------------------------------------------------
-          # 输出最终文件列表
-          # --------------------------------------------------
-          #
-          # GitHub Actions 日志里可以直接确认：
-          #
-          #   文件名
-          #   文件大小
-          #
-          echo
-          echo "=== Build artifacts ==="
-          ls -lah dist
-
-
-          # --------------------------------------------------
-          # 验证 sysupgrade 固件是否生成
-          # --------------------------------------------------
-          #
-          # sysupgrade.bin 是 OpenWrt 中最重要的升级镜像。
-          #
-          # 如果没有生成 sysupgrade，
-          # 即使 Docker 返回成功，也不能认为固件构建成功。
-          #
           SYSUPGRADE_COUNT="$(
             find dist \
               -maxdepth 1 \
@@ -888,59 +286,63 @@ jobs:
               | wc -l
           )"
 
-
-          # 至少要求存在一个 sysupgrade 固件。
-          #
-          if [ "$SYSUPGRADE_COUNT" -lt 1 ]; then
-            echo "ERROR: sysupgrade image was not generated" >&2
+          if [ "${SYSUPGRADE_COUNT}" -lt 1 ]; then
+            echo "ERROR: MT3600BE sysupgrade firmware not found"
+            echo
+            echo "Files in dist:"
+            find dist -maxdepth 1 -type f -printf '%f\n'
             exit 1
           fi
 
+          echo "MT3600BE sysupgrade firmware verified."
 
-      # ------------------------------------------------------
-      # Step 7
-      # 上传 GitHub Actions Artifact
-      # ------------------------------------------------------
-      #
-      # 构建完成以后：
-      #
-      # GitHub
-      #   -> Actions
-      #   -> 对应 Build
-      #   -> Artifacts
-      #
-      # 就可以下载固件。
-      #
-      - name: Upload artifact
+
+      # --------------------------------------------------
+      # SHA256
+      # --------------------------------------------------
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd dist
+
+          find . \
+            -maxdepth 1 \
+            -type f \
+            ! -name SHA256SUMS \
+            -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > SHA256SUMS
+
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      # --------------------------------------------------
+      # Show artifacts
+      # --------------------------------------------------
+
+      - name: Show artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "GL-MT3600BE Build Completed"
+          echo "========================================"
+
+          ls -lah dist/
+
+      # --------------------------------------------------
+      # Upload
+      # --------------------------------------------------
+
+      - name: Upload MT3600BE firmware
         uses: actions/upload-artifact@v4
         with:
-
-          # Artifact 名称。
-          #
-          # 例如：
-          #
-          #   openwrt-gl-mt3600be-25.12.5-0.0.1
-          #
-          name: openwrt-gl-mt3600be-25.12.5-${{ inputs.firmware_version }}
-
-
-          # 上传 dist 目录中的全部文件。
+          name: openwrt-mt3600be-25.12.5-${{ inputs.firmware_version }}
           path: dist/
-
-
-          # 如果 dist 中没有任何文件，
-          # 直接让 Workflow 失败。
-          #
-          # 防止出现：
-          #
-          #   Actions 显示绿色
-          #   实际却没有固件
-          #
           if-no-files-found: error
-
-
-          # GitHub Artifact 保存时间。
-          #
-          # 30 天之后 GitHub 自动删除。
-          #
-          retention-days: 30
+          retention-days: 90
