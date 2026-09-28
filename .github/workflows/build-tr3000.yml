@@ -3,211 +3,76 @@ name: Build OpenWrt 25.12.5 Cudy TR3000 256MB
 on:
   workflow_dispatch:
     inputs:
-
-      # --------------------------------------------------
-      # Custom firmware version
-      #
-      # 这是你自己的固件版本号，
-      # 与 OpenWrt 25.12.5 官方版本独立。
-      # --------------------------------------------------
-
       firmware_version:
         description: "Custom firmware version"
         required: true
         default: "0.0.1"
-
-
-      # --------------------------------------------------
-      # Default LAN IP
-      #
-      # 第一次启动以及恢复出厂后都会使用该地址。
-      # --------------------------------------------------
 
       lan_ip:
         description: "LAN IP address"
         required: true
         default: "192.168.88.1"
 
-
-      # --------------------------------------------------
-      # Hostname
-      # --------------------------------------------------
-
       hostname:
         description: "Hostname"
         required: true
         default: "tr3000"
 
-
-# --------------------------------------------------
-# GitHub Token permissions
-#
-# 构建固件只需要读取仓库。
-# --------------------------------------------------
-
 permissions:
   contents: read
 
-
-# --------------------------------------------------
-# Concurrency
-#
-# 防止同一个分支同时进行多个 TR3000 构建。
-# --------------------------------------------------
-
 concurrency:
-
   group: openwrt-tr3000-25.12.5-${{ github.ref }}
-
   cancel-in-progress: false
 
-
-# --------------------------------------------------
-# OpenWrt build parameters
-# --------------------------------------------------
-
 env:
-
-  # MediaTek target
   TARGET: mediatek
-
-  # Filogic platform
   SUBTARGET: filogic
-
-
-  # --------------------------------------------------
-  # Cudy TR3000 V1 256MB Flash
-  #
-  # 注意：
-  #
-  # 这里必须使用 256MB 专用 Profile。
-  #
-  # 不要修改成：
-  #
-  #   cudy_tr3000-v1
-  #
-  # --------------------------------------------------
-
   PROFILE: cudy_tr3000-256mb-v1
-
-
-  # --------------------------------------------------
-  # Fixed OpenWrt stable version
-  # --------------------------------------------------
-
   OPENWRT_VERSION: "25.12.5"
-
-
-  # --------------------------------------------------
-  # Device-specific configuration
-  # --------------------------------------------------
-
   DEVICE_DIR: devices/tr3000
 
-
 jobs:
-
   build:
-
     name: Build TR3000 256MB OpenWrt 25.12.5
-
     runs-on: ubuntu-latest
 
-
     steps:
-
-
-      # ==================================================
-      # Checkout
-      # ==================================================
-
       - name: Checkout repository
-
         uses: actions/checkout@v4
 
-
-      # ==================================================
-      # Validate
-      # ==================================================
-      #
-      # 在真正开始下载 ImageBuilder 前，
-      # 检查所有必须的文件。
-      #
-      # 可以避免跑几分钟以后才发现设备目录缺文件。
-      # ==================================================
-
       - name: Validate inputs
-
         shell: bash
-
         run: |
           set -euo pipefail
 
-
           test -n "${{ inputs.firmware_version }}"
-
           test -n "${{ inputs.lan_ip }}"
-
           test -n "${{ inputs.hostname }}"
 
-
           test -d "${DEVICE_DIR}"
-
-
-          test -f \
-            "${DEVICE_DIR}/build.sh"
-
-
-          test -f \
-            "${DEVICE_DIR}/packages.txt"
-
-
-          test -f \
-            "${DEVICE_DIR}/frpc.template"
-
+          test -f "${DEVICE_DIR}/build.sh"
+          test -f "${DEVICE_DIR}/packages.txt"
+          test -f "${DEVICE_DIR}/frpc.template"
 
           test -f \
             "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init"
 
-
           test -f \
             "${DEVICE_DIR}/files/etc/sysctl.d/99-disable-ipv6.conf"
-
 
           test -f \
             "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
 
-
-      # ==================================================
-      # Prepare custom rootfs
-      # ==================================================
-      #
-      # 生成：
-      #
-      #   /etc/custom-build.conf
-      #
-      #   /etc/build-info
-      #
-      # 并将它们一起打进固件。
-      # ==================================================
-
       - name: Prepare custom rootfs
-
         shell: bash
-
         run: |
           set -euo pipefail
-
 
           chmod 0755 \
             "${DEVICE_DIR}/build.sh" \
             "${DEVICE_DIR}/files/etc/uci-defaults/99-custom-init" \
             "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
-
-
-          # ----------------------------------------------
-          # First boot configuration
-          # ----------------------------------------------
 
           cat > "${DEVICE_DIR}/files/etc/custom-build.conf" <<EOF
           LAN_IP='${{ inputs.lan_ip }}'
@@ -215,11 +80,6 @@ jobs:
           TIMEZONE='CST-8'
           ZONENAME='Asia/Shanghai'
           EOF
-
-
-          # ----------------------------------------------
-          # Firmware build information
-          # ----------------------------------------------
 
           cat > "${DEVICE_DIR}/files/etc/build-info" <<EOF
           DEVICE='Cudy TR3000 V1 256MB'
@@ -233,204 +93,108 @@ jobs:
           GIT_COMMIT='${GITHUB_SHA}'
           EOF
 
-
           echo "=== custom-build.conf ==="
-
-          cat \
-            "${DEVICE_DIR}/files/etc/custom-build.conf"
-
+          cat "${DEVICE_DIR}/files/etc/custom-build.conf"
 
           echo
-
           echo "=== build-info ==="
-
-          cat \
-            "${DEVICE_DIR}/files/etc/build-info"
-
-
-      # ==================================================
-      # Prepare FRP
-      # ==================================================
-      #
-      # FRP_SERVER_ADDR：
-      #
-      #   GitHub Repository Variable
-      #
-      # FRP_TOKEN：
-      #
-      #   GitHub Repository Secret
-      #
-      # 与 MT3600BE SNAPSHOT 构建完全一致。
-      # ==================================================
+          cat "${DEVICE_DIR}/files/etc/build-info"
 
       - name: Prepare FRP configuration
-
         shell: bash
-
         env:
-
           FRP_TOKEN: ${{ secrets.FRP_TOKEN }}
-
           FRP_SERVER_ADDR: ${{ vars.FRP_SERVER_ADDR }}
-
         run: |
           set -euo pipefail
 
-
-          # ----------------------------------------------
-          # Verify FRP token
-          # ----------------------------------------------
-
           if [ -z "${FRP_TOKEN:-}" ]; then
-
             echo "ERROR: FRP_TOKEN is empty"
-
             exit 1
-
           fi
-
-
-          # ----------------------------------------------
-          # Verify FRP server
-          # ----------------------------------------------
 
           if [ -z "${FRP_SERVER_ADDR:-}" ]; then
-
             echo "ERROR: FRP_SERVER_ADDR is empty"
-
             exit 1
-
           fi
 
-
-          # ----------------------------------------------
-          # Create FRP directories
-          # ----------------------------------------------
-
           mkdir -p \
-            "${DEVICE_DIR}/files/etc/config" \
-            "${DEVICE_DIR}/files/etc/frp"
+            "${DEVICE_DIR}/files/etc/config"
 
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
 
-          # ----------------------------------------------
-          # Generate /etc/config/frpc
-          # ----------------------------------------------
+          device_dir = Path(os.environ["DEVICE_DIR"])
+          template_file = device_dir / "frpc.template"
+          output_file = device_dir / "files/etc/config/frpc"
 
-          sed \
-            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
-            "${DEVICE_DIR}/frpc.template" \
-            > "${DEVICE_DIR}/files/etc/config/frpc"
+          content = template_file.read_text()
 
+          content = content.replace(
+              "__FRP_SERVER_ADDR__",
+              os.environ["FRP_SERVER_ADDR"],
+          )
 
-          # ----------------------------------------------
-          # Generate FRP token
-          # ----------------------------------------------
+          content = content.replace(
+              "__FRP_TOKEN__",
+              os.environ["FRP_TOKEN"],
+          )
 
-          printf '%s\n' "${FRP_TOKEN}" \
-            > "${DEVICE_DIR}/files/etc/frp/token"
-
-
-          # ImageBuilder container needs read access.
-          #
-          # Router first boot script will change
-          # this back to 0600.
-          chmod 0644 \
-            "${DEVICE_DIR}/files/etc/frp/token"
-
-
-          # ----------------------------------------------
-          # Verify template replacement
-          # ----------------------------------------------
+          output_file.write_text(content)
+          PY
 
           if grep -q '__FRP_' \
             "${DEVICE_DIR}/files/etc/config/frpc"; then
 
             echo "ERROR: unresolved FRP template variable"
-
             exit 1
-
           fi
 
+          grep -q "option server_addr" \
+            "${DEVICE_DIR}/files/etc/config/frpc"
+
+          grep -q "option token" \
+            "${DEVICE_DIR}/files/etc/config/frpc"
+
+          chmod 0644 \
+            "${DEVICE_DIR}/files/etc/config/frpc"
 
           echo "FRP configuration prepared"
 
-
-      # ==================================================
-      # Prepare build directories
-      # ==================================================
-
       - name: Prepare build directories
-
         shell: bash
-
         run: |
           set -euo pipefail
-
 
           mkdir -p bin
-
           mkdir -p dl
-
           mkdir -p dist
 
-
-          # OpenWrt Docker ImageBuilder uses
-          # a non-root build user.
           chmod 0777 bin dl
 
-
-      # ==================================================
-      # Pull OpenWrt ImageBuilder
-      # ==================================================
-      #
-      # Final Docker image:
-      #
-      # openwrt/imagebuilder:
-      # mediatek-filogic-25.12.5
-      #
-      # ==================================================
-
       - name: Pull OpenWrt ImageBuilder
-
         shell: bash
-
         run: |
           set -euo pipefail
-
 
           IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
 
-
           echo "========================================"
-
           echo "OpenWrt ImageBuilder"
-
           echo "IMAGE:   ${IMAGE}"
-
           echo "TARGET:  ${TARGET}/${SUBTARGET}"
-
           echo "PROFILE: ${PROFILE}"
-
           echo "========================================"
-
 
           docker pull "${IMAGE}"
 
-
-      # ==================================================
-      # Build
-      # ==================================================
-
       - name: Build OpenWrt TR3000
-
         shell: bash
-
         run: |
           set -euo pipefail
 
-
           IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
-
 
           docker run --rm \
             -e PROFILE="${PROFILE}" \
@@ -443,38 +207,22 @@ jobs:
             "${IMAGE}" \
             sh /custom-device/build.sh
 
-
-      # ==================================================
-      # Collect firmware
-      # ==================================================
-
       - name: Collect TR3000 firmware
-
         shell: bash
-
         run: |
           set -euo pipefail
 
-
           rm -rf dist/*
-
 
           TARGET_DIR="bin/targets/${TARGET}/${SUBTARGET}"
 
-
           if [ ! -d "${TARGET_DIR}" ]; then
-
             echo "ERROR: target directory not found:"
-
             echo "${TARGET_DIR}"
-
             exit 1
-
           fi
 
-
           echo "=== Generated files ==="
-
 
           find "${TARGET_DIR}" \
             -maxdepth 1 \
@@ -482,15 +230,8 @@ jobs:
             -printf '%f\n' \
             | sort
 
-
           echo
-
           echo "=== Collect TR3000 256MB firmware ==="
-
-
-          # ----------------------------------------------
-          # Only collect TR3000 256MB firmware
-          # ----------------------------------------------
 
           find "${TARGET_DIR}" \
             -maxdepth 1 \
@@ -505,27 +246,14 @@ jobs:
             \) \
             -exec cp -v {} dist/ \;
 
-
           cp \
             "${DEVICE_DIR}/files/etc/build-info" \
             dist/build-info.txt
 
-
-      # ==================================================
-      # Verify firmware
-      # ==================================================
-      #
-      # 必须生成 TR3000 256MB sysupgrade.bin，
-      # 否则整个 Workflow 直接失败。
-      # ==================================================
-
       - name: Verify TR3000 firmware
-
         shell: bash
-
         run: |
           set -euo pipefail
-
 
           SYSUPGRADE_COUNT="$(
             find dist \
@@ -535,44 +263,28 @@ jobs:
               | wc -l
           )"
 
-
           if [ "${SYSUPGRADE_COUNT}" -lt 1 ]; then
-
             echo "ERROR: TR3000 256MB sysupgrade firmware not found"
 
             echo
-
             echo "Files in dist:"
-
 
             find dist \
               -maxdepth 1 \
               -type f \
               -printf '%f\n'
 
-
             exit 1
-
           fi
-
 
           echo "TR3000 256MB sysupgrade firmware verified."
 
-
-      # ==================================================
-      # SHA256
-      # ==================================================
-
       - name: Generate SHA256SUMS
-
         shell: bash
-
         run: |
           set -euo pipefail
 
-
           cd dist
-
 
           find . \
             -maxdepth 1 \
@@ -583,49 +295,24 @@ jobs:
             | xargs -0 sha256sum \
             > SHA256SUMS
 
-
           echo "=== SHA256SUMS ==="
-
-
           cat SHA256SUMS
 
-
-      # ==================================================
-      # Show artifacts
-      # ==================================================
-
       - name: Show artifacts
-
         shell: bash
-
         run: |
           set -euo pipefail
 
-
           echo "========================================"
-
           echo "Cudy TR3000 256MB Build Completed"
-
           echo "========================================"
-
 
           ls -lah dist/
 
-
-      # ==================================================
-      # Upload GitHub Artifact
-      # ==================================================
-
       - name: Upload TR3000 firmware
-
         uses: actions/upload-artifact@v4
-
         with:
-
           name: openwrt-tr3000-256mb-25.12.5-${{ inputs.firmware_version }}
-
           path: dist/
-
           if-no-files-found: error
-
           retention-days: 90
