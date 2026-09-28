@@ -1,0 +1,7 @@
+# Extra packages on top of OpenWrt SNAPSHOT defaults
+
+# Web UI
+luci
+
+# Recovery / remote control channel
+frpc

@@ -1,0 +1,83 @@
+#!/bin/sh
+
+set -eu
+
+CONFIG_FILE="/etc/custom-build.conf"
+
+LAN_IP="192.168.88.1"
+HOSTNAME="tr3000"
+TIMEZONE="CST-8"
+ZONENAME="Asia/Shanghai"
+
+if [ -f "$CONFIG_FILE" ]; then
+    . "$CONFIG_FILE"
+fi
+
+logger -t custom-init "Starting first boot initialization"
+
+# System Setting
+uci -q set system.@system[0].hostname="$HOSTNAME"
+uci -q set system.@system[0].timezone="$TIMEZONE"
+uci -q set system.@system[0].zonename="$ZONENAME"
+
+# LAN Setting
+uci -q set network.lan.ipaddr="$LAN_IP"
+uci -q set network.lan.netmask="255.255.255.0"
+
+uci -q delete network.wan6
+uci -q delete network.globals.ula_prefix
+
+# Disable IPv6
+# Remove WAN IPv6 interface
+uci -q delete network.wan6
+
+# Remove ULA prefix
+uci -q delete network.globals.ula_prefix
+
+# Disable LAN IPv6 advertisement/services
+uci set dhcp.lan.ra='disabled'
+uci set dhcp.lan.dhcpv6='disabled'
+uci set dhcp.lan.ndp='disabled'
+
+# Remove unused IPv6 options
+uci -q delete dhcp.lan.ra_slaac
+uci -q delete dhcp.lan.ra_flags
+
+# Commit UCI
+uci commit system
+uci commit network
+uci commit dhcp
+
+# frp
+
+# FRP is the recovery/control channel and must survive factory reset.
+[ -x /usr/bin/frpc ] || {
+    logger -t custom-init "ERROR: /usr/bin/frpc missing"
+    exit 1
+}
+[ -f /etc/config/frpc ] || {
+    logger -t custom-init "ERROR: /etc/config/frpc missing"
+    exit 1
+}
+[ -s /etc/frp/token ] || {
+    logger -t custom-init "ERROR: /etc/frp/token missing"
+    exit 1
+}
+chmod 0600 /etc/frp/token
+
+# Stable device identity based on the factory WAN MAC address.
+DEVICE_ID="$(tr -d ':' < /sys/class/net/eth0/address | tail -c 7)"
+logger -t custom-init "Device ID: ${DEVICE_ID}"
+
+# Unique proxy name per router. remote_port=0 in the template lets frps
+# allocate an available port, avoiding collisions when many devices reset.
+uci set frpc.ssh.name="tr3000-${DEVICE_ID}-ssh"
+uci commit frpc
+
+# Enable on every boot, and start now. If WAN/DNS is not ready yet,
+# frpc/procd will retry because login_fail_exit=false and respawn=1.
+/etc/init.d/frpc enable
+/etc/init.d/frpc restart || /etc/init.d/frpc start || true
+
+logger -t custom-init "First boot initialization completed"
+exit 0
