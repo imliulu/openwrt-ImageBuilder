@@ -18,7 +18,6 @@ on:
         required: true
         default: "mt3600be"
 
-
 permissions:
   contents: read
 
@@ -26,15 +25,12 @@ concurrency:
   group: openwrt-mt3600be-25.12.5-${{ github.ref }}
   cancel-in-progress: false
 
-
 env:
   TARGET: mediatek
   SUBTARGET: filogic
   PROFILE: glinet_gl-mt3600be
   OPENWRT_VERSION: "25.12.5"
-
   DEVICE_DIR: devices/mt3600be
-
 
 jobs:
   build:
@@ -42,17 +38,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # --------------------------------------------------
-      # Checkout
-      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
-
-
-      # --------------------------------------------------
-      # Validate
-      # --------------------------------------------------
 
       - name: Validate inputs
         shell: bash
@@ -62,6 +49,7 @@ jobs:
           test -n "${{ inputs.firmware_version }}"
           test -n "${{ inputs.lan_ip }}"
           test -n "${{ inputs.hostname }}"
+
           test -d "${DEVICE_DIR}"
           test -f "${DEVICE_DIR}/build.sh"
           test -f "${DEVICE_DIR}/packages.txt"
@@ -75,10 +63,6 @@ jobs:
 
           test -f \
             "${DEVICE_DIR}/files/etc/hotplug.d/iface/99-disable-ipv6"
-
-      # --------------------------------------------------
-      # Prepare custom rootfs
-      # --------------------------------------------------
 
       - name: Prepare custom rootfs
         shell: bash
@@ -116,11 +100,6 @@ jobs:
           echo "=== build-info ==="
           cat "${DEVICE_DIR}/files/etc/build-info"
 
-
-      # --------------------------------------------------
-      # Prepare FRP
-      # --------------------------------------------------
-
       - name: Prepare FRP configuration
         shell: bash
         env:
@@ -140,21 +119,30 @@ jobs:
           fi
 
           mkdir -p \
-            "${DEVICE_DIR}/files/etc/config" \
-            "${DEVICE_DIR}/files/etc/frp"
+            "${DEVICE_DIR}/files/etc/config"
 
-          sed \
-            "s|__FRP_SERVER_ADDR__|${FRP_SERVER_ADDR}|g" \
-            "${DEVICE_DIR}/frpc.template" \
-            > "${DEVICE_DIR}/files/etc/config/frpc"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
 
-          printf '%s\n' "${FRP_TOKEN}" \
-            > "${DEVICE_DIR}/files/etc/frp/token"
+          device_dir = Path(os.environ["DEVICE_DIR"])
+          template_file = device_dir / "frpc.template"
+          output_file = device_dir / "files/etc/config/frpc"
 
-          # ImageBuilder container must be able to read the file.
-          # 99-custom-init can chmod it to 0600 after boot.
-          chmod 0644 \
-            "${DEVICE_DIR}/files/etc/frp/token"
+          content = template_file.read_text()
+
+          content = content.replace(
+              "__FRP_SERVER_ADDR__",
+              os.environ["FRP_SERVER_ADDR"],
+          )
+
+          content = content.replace(
+              "__FRP_TOKEN__",
+              os.environ["FRP_TOKEN"],
+          )
+
+          output_file.write_text(content)
+          PY
 
           if grep -q '__FRP_' \
             "${DEVICE_DIR}/files/etc/config/frpc"; then
@@ -163,11 +151,16 @@ jobs:
             exit 1
           fi
 
-          echo "FRP configuration prepared"
+          grep -q "option server_addr" \
+            "${DEVICE_DIR}/files/etc/config/frpc"
 
-      # --------------------------------------------------
-      # Prepare directories
-      # --------------------------------------------------
+          grep -q "option token" \
+            "${DEVICE_DIR}/files/etc/config/frpc"
+
+          chmod 0644 \
+            "${DEVICE_DIR}/files/etc/config/frpc"
+
+          echo "FRP configuration prepared"
 
       - name: Prepare build directories
         shell: bash
@@ -180,10 +173,6 @@ jobs:
 
           chmod 0777 bin dl
 
-
-      # --------------------------------------------------
-      # Pull ImageBuilder
-      # --------------------------------------------------
       - name: Pull OpenWrt ImageBuilder
         shell: bash
         run: |
@@ -199,10 +188,6 @@ jobs:
           echo "========================================"
 
           docker pull "${IMAGE}"
-
-      # --------------------------------------------------
-      # Build
-      # --------------------------------------------------
 
       - name: Build OpenWrt MT3600BE
         shell: bash
@@ -221,10 +206,6 @@ jobs:
             -v "${GITHUB_WORKSPACE}/${DEVICE_DIR}:/custom-device:ro" \
             "${IMAGE}" \
             sh /custom-device/build.sh
-
-      # --------------------------------------------------
-      # Collect firmware
-      # --------------------------------------------------
 
       - name: Collect MT3600BE firmware
         shell: bash
@@ -269,10 +250,6 @@ jobs:
             "${DEVICE_DIR}/files/etc/build-info" \
             dist/build-info.txt
 
-      # --------------------------------------------------
-      # Verify firmware
-      # --------------------------------------------------
-
       - name: Verify MT3600BE firmware
         shell: bash
         run: |
@@ -288,18 +265,19 @@ jobs:
 
           if [ "${SYSUPGRADE_COUNT}" -lt 1 ]; then
             echo "ERROR: MT3600BE sysupgrade firmware not found"
+
             echo
             echo "Files in dist:"
-            find dist -maxdepth 1 -type f -printf '%f\n'
+
+            find dist \
+              -maxdepth 1 \
+              -type f \
+              -printf '%f\n'
+
             exit 1
           fi
 
           echo "MT3600BE sysupgrade firmware verified."
-
-
-      # --------------------------------------------------
-      # SHA256
-      # --------------------------------------------------
 
       - name: Generate SHA256SUMS
         shell: bash
@@ -320,10 +298,6 @@ jobs:
           echo "=== SHA256SUMS ==="
           cat SHA256SUMS
 
-      # --------------------------------------------------
-      # Show artifacts
-      # --------------------------------------------------
-
       - name: Show artifacts
         shell: bash
         run: |
@@ -334,10 +308,6 @@ jobs:
           echo "========================================"
 
           ls -lah dist/
-
-      # --------------------------------------------------
-      # Upload
-      # --------------------------------------------------
 
       - name: Upload MT3600BE firmware
         uses: actions/upload-artifact@v4
