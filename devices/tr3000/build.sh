@@ -2,17 +2,37 @@
 
 set -eu
 
+
+# --------------------------------------------------
+# Cudy TR3000 V1 256MB Profile
+# --------------------------------------------------
+
 PROFILE="${PROFILE:-cudy_tr3000-256mb-v1}"
+
+
+# --------------------------------------------------
+# Device package list
+# --------------------------------------------------
 
 PACKAGE_FILE="${PACKAGE_FILE:-/custom-device/packages.txt}"
 
+
+# --------------------------------------------------
+# Custom root filesystem files
+# --------------------------------------------------
+
 CUSTOM_FILES="${CUSTOM_FILES:-/custom-files}"
+
+
+# --------------------------------------------------
+# Custom image name suffix
+# --------------------------------------------------
 
 EXTRA_IMAGE_NAME="${EXTRA_IMAGE_NAME:-custom}"
 
 
 # --------------------------------------------------
-# Check package list
+# Verify package list
 # --------------------------------------------------
 
 if [ ! -f "$PACKAGE_FILE" ]; then
@@ -25,11 +45,12 @@ fi
 
 
 # --------------------------------------------------
-# Initialize ImageBuilder
+# Initialize OpenWrt ImageBuilder
 #
-# OpenWrt 24.10+ Docker ImageBuilder 使用轻量 wrapper。
+# OpenWrt 24.10+ Docker ImageBuilder 可能只包含
+# setup.sh wrapper。
 #
-# 第一次运行时 setup.sh 会下载并解压真正的
+# 第一次运行时需要执行 setup.sh 下载真正的
 # ImageBuilder。
 # --------------------------------------------------
 
@@ -56,12 +77,12 @@ fi
 
 
 # --------------------------------------------------
-# Read package list
+# Load package list
 #
 # 自动忽略：
 #
-#   空行
-#   # 注释
+# 空行
+# # 开头的注释
 # --------------------------------------------------
 
 PACKAGES="$(awk '
@@ -81,7 +102,8 @@ echo "==> PACKAGES=$PACKAGES"
 # --------------------------------------------------
 # Verify device profile
 #
-# 防止 PROFILE 写错以后构建整个过程才失败。
+# 如果 25.12.5 ImageBuilder 中不存在这个 Profile，
+# 直接退出，避免继续错误构建。
 # --------------------------------------------------
 
 if ! make info 2>/dev/null | grep -Fq "$PROFILE"; then
@@ -100,7 +122,7 @@ fi
 
 
 # --------------------------------------------------
-# Build OpenWrt image
+# Build firmware
 # --------------------------------------------------
 
 make image \
@@ -114,7 +136,7 @@ echo "==> Build finished"
 
 
 # --------------------------------------------------
-# Show generated firmware
+# Show generated files
 # --------------------------------------------------
 
 find bin/targets \
